@@ -35,12 +35,10 @@ const dataUrlToPart = (dataUrl: string) => {
 
 // Extract image data from GenerateContentResponse
 const handleApiResponse = (response: GenerateContentResponse): string => {
-    // Note: Candidates might be empty or missing if blocked by safety filters
     if (!response.candidates || response.candidates.length === 0) {
         throw new Error("No candidates returned from the model. This may be due to safety filters.");
     }
 
-    // Iterate through candidates and parts to find an image part
     for (const candidate of response.candidates) {
         if (candidate.content?.parts) {
             for (const part of candidate.content.parts) {
@@ -57,7 +55,6 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
         throw new Error(`Generation stopped unexpectedly. Reason: ${finishReason}.`);
     }
 
-    // fallback to text if no image found
     const textFeedback = response.text?.trim();
     const errorMessage = textFeedback 
         ? `The model responded with text instead of an image: "${textFeedback}"`
@@ -65,16 +62,13 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
     throw new Error(errorMessage);
 };
 
-// Initialize the Gemini API client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const model = 'gemini-2.5-flash-image';
 
-// Generate a model image from a user photo
 export const generateModelImage = async (userImage: File): Promise<string> => {
     const userImagePart = await fileToPart(userImage);
-    const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
+    const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo for an e-commerce catalog. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). Preserve the person's identity, unique facial features, body proportions, and current accessories (hats, glasses, sunglasses) with 100% fidelity. Do not change their hair, skin tone, or existing clothing style in this step. The output must be photorealistic and extremely sharp. Return ONLY the final image.";
     
-    // Call generateContent for image generation with nano banana series models
     const response = await ai.models.generateContent({
         model,
         contents: { parts: [userImagePart, { text: prompt }] },
@@ -82,20 +76,32 @@ export const generateModelImage = async (userImage: File): Promise<string> => {
     return handleApiResponse(response);
 };
 
-// Apply a garment to a model image
 export const generateVirtualTryOnImage = async (modelImageUrl: string, garmentImage: File): Promise<string> => {
     const modelImagePart = dataUrlToPart(modelImageUrl);
     const garmentImagePart = await fileToPart(garmentImage);
-    const prompt = `You are an expert virtual try-on AI. You will be given a 'model image' and a 'garment image'. Your task is to create a new photorealistic image where the person from the 'model image' is wearing the clothing from the 'garment image'.
+    const prompt = `### MISSION: 100% PRECISION VIRTUAL TRY-ON
+You are an advanced cloth-to-person transfer system. Your objective is absolute structural and color fidelity to the 'garment image' and the 'model image'.
 
-**Crucial Rules:**
-1.  **Complete Garment Replacement:** You MUST completely REMOVE and REPLACE the clothing item worn by the person in the 'model image' with the new garment. No part of the original clothing (e.g., collars, sleeves, patterns) should be visible in the final image.
-2.  **Preserve the Model:** The person's face, hair, body shape, and pose from the 'model image' MUST remain unchanged.
-3.  **Preserve the Background:** The entire background from the 'model image' MUST be preserved perfectly.
-4.  **Apply the Garment:** Realistically fit the new garment onto the person. It should adapt to their pose with natural folds, shadows, and lighting consistent with the original scene.
-5.  **Output:** Return ONLY the final, edited image. Do not include any text.`;
+### STEP 1: GARMENT SEGMENTATION & SELECTIVE TARGETING
+- Identify the garment(s) in the 'garment image'. 
+- **STRICT SELECTIVITY:** Only replace the pixels of the corresponding category on the model.
+- **ISOLATION RULE:** If you are adding a JACKET/TOP, you MUST NOT change the model's pants, shoes, or accessories (hat/sunglasses). If the model is wearing olive joggers, they MUST remain olive joggers in the final image.
+- **ISOLATION RULE:** If you are adding PANTS, you MUST NOT change the model's shirt, shoes, or accessories.
+
+### STEP 2: STRUCTURAL FIDELITY (REPLACE, DO NOT RE-COLOR)
+- **DISREGARD ORIGINAL CUT:** Completely ignore the cut of the person's original clothes. If the model is wearing joggers with elastic cuffs, but the 'garment image' is a straight-leg slack, the final output MUST be a straight-leg slack.
+- **NO HALLUCINATIONS:** Strictly prohibited from adding elastic cuffs, drawstrings, or extra pockets that are not in the product photo. The leg opening and hem must match the 'garment image' 100%.
+
+### STEP 3: COLOR & TEXTURE CALIBRATION
+- **COLOR PRECISION:** Sample the exact HEX color from the 'garment image'. The output garment must match this specific hue perfectly.
+- **LIGHTING NEUTRALITY:** Do not allow the environment lighting in the 'model image' to shift the color. The fabric must look true-to-life as seen in a professional product shot.
+- **FABRIC FIDELITY:** Replicate the texture (twill, stretch, knit) exactly as seen in the garment image.
+
+### STEP 4: IDENTITY & SCENE PRESERVATION
+- The person's face, hair, skin, sunglasses, hat, and background MUST remain a pixel-perfect match to the 'model image'.
+
+Return ONLY the high-resolution generated image. NO TEXT.`;
     
-    // Call generateContent for image generation with nano banana series models
     const response = await ai.models.generateContent({
         model,
         contents: { parts: [modelImagePart, garmentImagePart, { text: prompt }] },
@@ -103,12 +109,16 @@ export const generateVirtualTryOnImage = async (modelImageUrl: string, garmentIm
     return handleApiResponse(response);
 };
 
-// Generate a pose variation of an image
 export const generatePoseVariation = async (tryOnImageUrl: string, poseInstruction: string): Promise<string> => {
     const tryOnImagePart = dataUrlToPart(tryOnImageUrl);
-    const prompt = `You are an expert fashion photographer AI. Take this image and regenerate it from a different perspective. The person, clothing, and background style must remain identical. The new perspective should be: "${poseInstruction}". Return ONLY the final image.`;
+    const prompt = `You are an expert fashion photographer AI. Regenerate this exact person in this exact outfit from a new perspective: "${poseInstruction}". 
     
-    // Call generateContent for image generation with nano banana series models
+**RULES:**
+1. Keep the clothing structure (e.g., straight-leg cut), fabric texture, and specific colors 100% identical.
+2. Do not revert slacks back to joggers.
+3. Keep the person's identity, face, and accessories (hat/sunglasses) identical.
+4. Return ONLY the final image.`;
+    
     const response = await ai.models.generateContent({
         model,
         contents: { parts: [tryOnImagePart, { text: prompt }] },

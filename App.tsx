@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -79,7 +78,8 @@ const App: React.FC = () => {
     if (!currentLayer) return modelImageUrl;
 
     const poseInstruction = POSE_INSTRUCTIONS[currentPoseIndex];
-    return currentLayer.poseImages[poseInstruction] ?? Object.values(currentLayer.poseImages)[0];
+    // Fix: Explicitly cast Object.values result to string[] to ensure correctly typed return value (string | undefined)
+    return currentLayer.poseImages[poseInstruction] ?? (Object.values(currentLayer.poseImages) as string[])[0];
   }, [outfitHistory, currentOutfitIndex, currentPoseIndex, modelImageUrl]);
 
   const availablePoseKeys = useMemo(() => {
@@ -124,7 +124,8 @@ const App: React.FC = () => {
     setLoadingMessage(`Adding ${garmentInfo.name}...`);
 
     try {
-      const newImageUrl = await generateVirtualTryOnImage(displayImageUrl, garmentFile);
+      // displayImageUrl is narrowed to string by the check above, cast to ensure no 'unknown' mismatch
+      const newImageUrl = await generateVirtualTryOnImage(displayImageUrl as string, garmentFile);
       const currentPoseInstruction = POSE_INSTRUCTIONS[currentPoseIndex];
       
       const newLayer: OutfitLayer = { 
@@ -143,8 +144,8 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      // Fix: cast err as any to handle potential TS unknown issues
-      setError(getFriendlyErrorMessage(err as any, 'Failed to apply garment'));
+      // getFriendlyErrorMessage natively handles 'unknown' type for err
+      setError(getFriendlyErrorMessage(err, 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -177,7 +178,7 @@ const App: React.FC = () => {
       id: `saved-${Date.now()}`,
       name: garmentNames || 'Outfit',
       layers: [...activeOutfitLayers],
-      previewUrl: displayImageUrl,
+      previewUrl: displayImageUrl as string,
       timestamp: Date.now()
     };
 
@@ -197,12 +198,15 @@ const App: React.FC = () => {
     const poseInstruction = POSE_INSTRUCTIONS[newIndex];
     const currentLayer = outfitHistory[currentOutfitIndex];
 
+    if (!currentLayer) return;
+
     if (currentLayer.poseImages[poseInstruction]) {
       setCurrentPoseIndex(newIndex);
       return;
     }
 
-    const baseImageForPoseChange = Object.values(currentLayer.poseImages)[0];
+    // Fix: Cast Object.values to string[] to resolve 'unknown' to 'string' assignment error
+    const baseImageForPoseChange = (Object.values(currentLayer.poseImages) as string[])[0];
     if (!baseImageForPoseChange) return;
 
     setError(null);
@@ -216,14 +220,17 @@ const App: React.FC = () => {
       const newImageUrl = await generatePoseVariation(baseImageForPoseChange, poseInstruction);
       setOutfitHistory(prevHistory => {
         const newHistory = [...prevHistory];
-        const updatedLayer = { ...newHistory[currentOutfitIndex] };
+        const existingLayer = newHistory[currentOutfitIndex];
+        if (!existingLayer) return prevHistory;
+
+        const updatedLayer: OutfitLayer = { ...existingLayer };
         updatedLayer.poseImages = { ...updatedLayer.poseImages, [poseInstruction]: newImageUrl };
         newHistory[currentOutfitIndex] = updatedLayer;
         return newHistory;
       });
     } catch (err) {
-      // Fix: cast err as any to handle potential TS unknown issues
-      setError(getFriendlyErrorMessage(err as any, 'Failed to change pose'));
+      // getFriendlyErrorMessage accepts unknown, so no need for 'as any' if the helper is correctly typed
+      setError(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -265,7 +272,7 @@ const App: React.FC = () => {
             <main className="flex-grow relative flex flex-col md:flex-row overflow-hidden">
               <div className="w-full h-full flex-grow flex items-center justify-center bg-white pb-16 relative">
                 <Canvas 
-                  displayImageUrl={displayImageUrl}
+                  displayImageUrl={displayImageUrl as string}
                   onStartOver={handleStartOver}
                   isLoading={isLoading}
                   loadingMessage={loadingMessage}
